@@ -1,313 +1,189 @@
-# Calendly-Sendy Integration
+# Calendly ↔ Sendy Manual Sync & Test Suite
 
-A Node.js service that automatically adds Calendly appointment bookers to your Sendy email lists. When someone books an appointment through Calendly, their email is automatically added to your specified Sendy list.
+This project lets you periodically sync Calendly invitees (people who book meetings) into a Sendy email list without relying on Zapier or third‑party automation. It provides:
 
-## Features
+1. A robust manual sync script (`sync_calendly_to_sendy.js`) with dedupe, caching, throttling and reporting.
+2. Focused test scripts to validate Calendly and Sendy API behavior in isolation.
+3. Optional (legacy) webhook/server components if you later want real‑time updates.
 
-- 🚀 **Real-time Integration**: Instant subscriber addition via Calendly webhooks
-- 🔒 **Secure**: Webhook signature verification for security
-- 💾 **Smart Caching**: Prevents duplicate subscriptions
-- 📊 **Logging**: Comprehensive logging for monitoring
-- ⚡ **Lightweight**: Minimal dependencies, fast performance
-- 🛠 **Self-hosted**: Own your integration, no third-party services
+> If you are only doing periodic manual syncs you can ignore all webhook/server sections below.
 
-## Prerequisites
+## Key Scripts
 
-- Node.js 16+ installed
-- A [Calendly](https://calendly.com) account with webhook access
-- A [Sendy](https://sendy.co) installation with API access
-- A server or hosting platform to run the service
+| Script | Purpose |
+| ------ | ------- |
+| `src/scripts/sync_calendly_to_sendy.js` | Main sync: fetch Calendly invitees in a date window; subscribe new emails to a Sendy list; produce a JSON report. |
+| `src/scripts/test_calendly_events.js` | Atomic Calendly test: fetch events (with date range) and sample invitees—no Sendy calls. |
+| `src/scripts/test_sendy_subscribe.js` | Atomic Sendy test: exercise /subscribe endpoint for a single email and show raw response. |
+| Other test helpers (`test_calendly_connection.js`, `test_calendly_events.js`, analytics scripts, list scripts) | Diagnostics & exploration (brands, lists, counts, analytics). |
 
-## Quick Start
+## Installation
 
-1. **Clone and Install**
-   ```bash
-   git clone <your-repo>
-   cd calendly-sendy-integration
-   npm install
-   ```
+```bash
+git clone <your-fork-url>
+cd sendy-calendly-integration
+npm install
+```
 
-2. **Configure Environment**
-   ```bash
-   npm run setup
-   # Follow the interactive setup to configure your API keys
-   ```
-
-3. **Start the Server**
-   ```bash
-   # Development mode with auto-reload
-   npm run dev
-   
-   # Production mode
-   npm start
-   ```
-
-4. **Configure Calendly Webhook**
-   - Go to your Calendly account settings
-   - Add webhook URL: `https://your-domain.com/webhook/calendly`
-   - Select "Invitee Created" event
-   - Add your webhook secret for security
-
-## Configuration
-
-### Environment Variables
-
-Create a `.env` file (or use `npm run setup`):
+Create `.env` (or run `npm run setup` if present):
 
 ```env
-# Sendy Configuration
-SENDY_API_KEY=your_sendy_api_key_here
-SENDY_INSTALLATION_URL=https://your-sendy-installation.com
-SENDY_LIST_ID=your_calendly_list_id_here
+# Sendy
+SENDY_API_KEY=your_sendy_api_key
+SENDY_INSTALLATION_URL=https://your-sendy.example.com
+SENDY_LIST_ID=your_primary_list_id   # optional default for sync script
 
-# Calendly Configuration
-CALENDLY_WEBHOOK_SECRET=your_webhook_verification_secret_here
-CALENDLY_PERSONAL_ACCESS_TOKEN=your_calendly_personal_access_token_here
+# Calendly (Personal Access Token for API calls)
+CALENDLY_PERSONAL_ACCESS_TOKEN=your_calendly_pat
 
-# Server Configuration
+# Optional webhook (only if using server/webhooks)
+CALENDLY_WEBHOOK_SECRET=your_webhook_secret
 PORT=3000
-NODE_ENV=production
 
-# Cache Configuration
+# Optional caching / tuning
 CACHE_TTL=3600
+SENDY_SYNC_CACHE_FILE=.sendy_cache_default.json  # override persistent cache filename
 ```
 
-### Required Sendy Information
+## Main Sync Script Usage
 
-1. **API Key**: Found in Sendy Settings → API
-2. **Installation URL**: Your Sendy installation domain (e.g., `https://newsletters.yoursite.com`)
-3. **List ID**: Create a list called "Calendly" and get its ID from the list settings
+Basic (recommended: always specify a date window):
 
-### Calendly Information
-
-1. **Webhook Secret**: Set in Calendly webhook configuration for security (verifies incoming webhooks)
-2. **Personal Access Token (PAT)**: Create in Calendly under Integrations/Developer settings → Personal Access Tokens. Use this value in `CALENDLY_PERSONAL_ACCESS_TOKEN` to enable the CLI scripts (listing, analytics, sync). 
-
-## Deployment Options
-
-### Option 1: Railway (Recommended - Easiest)
-
-1. **Fork this repository**
-2. **Connect to Railway**:
-   - Go to [Railway](https://railway.app)
-   - Create new project from GitHub
-   - Select your forked repository
-3. **Set Environment Variables**:
-   - Add all variables from your `.env` file
-4. **Deploy**: Railway automatically builds and deploys
-
-### Option 2: Heroku
-
-1. **Prepare for Heroku**:
-   ```bash
-   # Install Heroku CLI, then:
-   heroku create your-calendly-sendy-app
-   ```
-
-2. **Set Environment Variables**:
-   ```bash
-   heroku config:set SENDY_API_KEY=your_key
-   heroku config:set SENDY_INSTALLATION_URL=https://your-sendy.com
-   heroku config:set SENDY_LIST_ID=your_list_id
-   # ... add all other variables
-   ```
-
-3. **Deploy**:
-   ```bash
-   git push heroku main
-   ```
-
-### Option 3: DigitalOcean App Platform
-
-1. **Create App**: Go to DigitalOcean → Apps → Create App
-2. **Connect Repository**: Link your GitHub repository
-3. **Configure Environment**: Add environment variables in app settings
-4. **Deploy**: DigitalOcean handles the rest
-
-### Option 4: Self-hosted with PM2
-
-1. **Install PM2**:
-   ```bash
-   npm install -g pm2
-   ```
-
-2. **Create PM2 Config** (`ecosystem.config.js`):
-   ```javascript
-   module.exports = {
-     apps: [{
-       name: 'calendly-sendy-integration',
-       script: './src/server.js',
-       instances: 1,
-       autorestart: true,
-       watch: false,
-       env: {
-         NODE_ENV: 'production',
-         PORT: 3000
-       }
-     }]
-   };
-   ```
-
-3. **Start with PM2**:
-   ```bash
-   pm2 start ecosystem.config.js
-   pm2 save
-   pm2 startup
-   ```
-
-### Option 5: Docker
-
-1. **Create Dockerfile**:
-   ```dockerfile
-   FROM node:18-alpine
-   WORKDIR /app
-   COPY package*.json ./
-   RUN npm ci --only=production
-   COPY src ./src
-   EXPOSE 3000
-   CMD ["npm", "start"]
-   ```
-
-2. **Build and Run**:
-   ```bash
-   docker build -t calendly-sendy-integration .
-   docker run -p 3000:3000 --env-file .env calendly-sendy-integration
-   ```
-
-## API Endpoints
-
-### Health Check
-```
-GET /health
-```
-Returns server status and health information.
-
-### Webhook Endpoint
-```
-POST /webhook/calendly
-```
-Receives Calendly webhook events. Configure this URL in your Calendly webhook settings.
-
-## Monitoring and Logs
-
-### Local Development
 ```bash
-npm run dev
-# Logs appear in console with timestamps
+node src/scripts/sync_calendly_to_sendy.js --from 2025-11-01 --to 2025-11-07 --list-id <SENDY_LIST_ID>
 ```
 
-### Production Monitoring
+Flags (both `--flag value` and `--flag=value` forms work):
 
-**Check Health**:
+| Flag | Meaning | Default |
+| ---- | ------- | ------- |
+| `--from` / `--since` | Start of date window (YYYY-MM-DD or full ISO) | none (fetches ALL if absent) |
+| `--to` / `--until` | End of date window (YYYY-MM-DD or full ISO) | none |
+| `--list-id` | Target Sendy list ID (required if not in env) | `SENDY_LIST_ID` env |
+| `--dry-run` | Do everything except the actual subscribe calls | false |
+| `--batch-size` | Number of emails per subscription batch | 20 |
+| `--throttle-ms` | Delay between individual subscribe requests | 250ms |
+| `--no-cache` | Disable in-memory cache (re-check statuses) | false |
+| `--clear-cache` | Flush in-memory cache before run | false |
+| `--no-persistent-cache` | Disable persistent JSON cache | false |
+| `--cache-file` | Custom persistent cache file path | auto (based on list id) |
+| `--refresh-persistent` | Clear persistent cache at start | false |
+
+Date normalization: `YYYY-MM-DD` expands to `T00:00:00Z` (from/since) and `T23:59:59Z` (to/until).
+
+Output: A `sync_report_<timestamp>.json` file containing counts, outcome per email, and failure details.
+
+Safety tip: Omitting date flags will fetch the entire history (can be large). Consider adding a guard (e.g. always pass `--from`/`--to`).
+
+Example with throttling and dry-run:
 ```bash
-curl https://your-domain.com/health
+node src/scripts/sync_calendly_to_sendy.js --from 2025-10-01 --to 2025-10-07 --list-id <LIST> --dry-run --batch-size 5 --throttle-ms 500
 ```
 
-**View Logs** (varies by platform):
-- **Railway**: View in dashboard logs tab
-- **Heroku**: `heroku logs --tail`
-- **PM2**: `pm2 logs`
+## Calendly Atomic Test
 
-### Log Levels
-- `INFO`: Normal operations, successful subscriptions
-- `WARN`: Non-critical issues, already subscribed users
-- `ERROR`: Failed API calls, configuration issues
+Use when verifying date range behavior without Sendy involvement:
 
-## Troubleshooting
-
-### Common Issues
-
-**1. "Invalid signature" errors**
-- Ensure `CALENDLY_WEBHOOK_SECRET` matches Calendly webhook settings
-- Check webhook URL is correct
-
-**2. "Sendy API error" messages**
-- Verify `SENDY_API_KEY` and `SENDY_INSTALLATION_URL`
-- Check Sendy list ID exists and is correct
-- Ensure Sendy installation is accessible
-
-**3. Server won't start**
-- Run `npm run setup` to reconfigure
-- Check all required environment variables are set
-- Verify Node.js version (16+ required)
-
-**4. Webhooks not received**
-- Check server is publicly accessible
-- Verify webhook URL in Calendly settings
-- Test with `curl -X POST https://your-domain.com/health`
-
-### Testing
-
-**Test Webhook Endpoint**:
 ```bash
-curl -X POST https://your-domain.com/webhook/calendly \
-  -H "Content-Type: application/json" \
-  -d '{"event":"invitee.created","payload":{"email":"test@example.com","name":"Test User","created_at":"2023-01-01T12:00:00Z"}}'
+node src/scripts/test_calendly_events.js --from 2025-11-01 --to 2025-11-07 --limit 5
 ```
 
-**Manual Subscriber Test**:
-```javascript
-// Test Sendy API directly
-const sendyService = require('./src/services/sendyService');
-sendyService.addSubscriber({
-  email: 'test@example.com',
-  name: 'Test User',
-  listId: 'your_list_id'
-}).then(console.log);
+Flags:
+| Flag | Purpose |
+| ---- | ------- |
+| `--from` / `--since` | Start date window |
+| `--to` / `--until` | End date window |
+| `--limit` | Max events to print (does not limit API query) |
+
+The script also locally re-filters returned events to prove they fall within the requested window.
+
+## Sendy Atomic Subscribe Test
+
+Validate raw `/subscribe` behavior:
+
+```bash
+node src/scripts/test_sendy_subscribe.js --list-id <LIST_ID> --email test.user@example.com --name "Test User"
 ```
 
-## Security Notes
+It prints success flag, status code, and the raw Sendy response (e.g. `"1"`, `"Already subscribed."`, or an error string). The sync script treats `"1"` and "Already subscribed" as success, and filters known error keywords.
 
-- Always use HTTPS in production
-- Set strong webhook secrets
-- Regularly rotate API keys
-- Monitor logs for suspicious activity
-- Keep dependencies updated
+## Caching Strategy
 
-## Development
+Two layers:
+- In-memory (NodeCache): avoids repeated status/subscription checks within a process. Clear with `--clear-cache`.
+- Persistent file (JSON): records emails confirmed subscribed; skip re-checking in future runs. Disable via `--no-persistent-cache`; refresh with `--refresh-persistent`.
 
-### Project Structure
+Cache keys are namespaced per list: `synced:<listId>:<email>`.
+
+## Throttling & Batching
+
+During subscribe phase:
+- Batch size (`--batch-size`) controls how many emails are processed before the next internal slice.
+- Throttle (`--throttle-ms`) waits between individual POSTs (not between batches). Increase values if Sendy rate limits or to reduce server load.
+
+Status checks for existing subscribers currently run sequentially (one per email) to keep logic simple and avoid concurrency complications with unpredictable Sendy rate limits.
+
+## Reports
+
+Each run writes a JSON file like:
+```json
+{
+  "listId": "<id>",
+  "since": "2025-11-01T00:00:00Z",
+  "until": "2025-11-07T23:59:59Z",
+  "totals": {
+    "checked": 3,
+    "attempted": 3,
+    "subscribed": 3,
+    "skipped": { "cached": 0, "alreadySubscribed": 0, "unsubscribed": 0, "bouncedOrComplained": 0, "unknownStatus": 0 },
+    "subscriptionFailures": 0
+  },
+  "results": [ { "email": "example@domain.com", "success": true, "message": "1" } ]
+}
 ```
-src/
-├── server.js              # Main server file
-├── setup.js               # Interactive setup script
-├── handlers/
-│   └── webhookHandler.js  # Calendly webhook processing
-├── services/
-│   └── sendyService.js    # Sendy API integration
-└── utils/
-    ├── cache.js           # Caching utilities
-    ├── config.js          # Configuration validation
-    └── logger.js          # Logging utilities
-```
 
-### Scripts
-- `npm start`: Start production server
-- `npm run dev`: Start development server with auto-reload
-- `npm run setup`: Interactive configuration setup
-- `npm test`: Run tests (if added)
-- `npm run lint`: Check code style
+## Environment Variable Reference
+
+| Var | Required | Purpose |
+| --- | -------- | ------- |
+| `SENDY_API_KEY` | yes | Auth for Sendy API calls |
+| `SENDY_INSTALLATION_URL` | yes | Base URL (e.g. https://newsletter.example.com) |
+| `SENDY_LIST_ID` | optional | Default list for sync script |
+| `CALENDLY_PERSONAL_ACCESS_TOKEN` | yes (for scripts) | Calendly API PAT for events/invitees |
+| `CALENDLY_WEBHOOK_SECRET` | no (unless using webhooks) | Verify webhook signatures |
+| `CACHE_TTL` | no | In-memory cache TTL seconds |
+| `SENDY_SYNC_CACHE_FILE` | no | Override persistent cache path |
+
+## Legacy Webhook / Server (Optional)
+
+The original design included a server (`src/server.js`) and webhook handler (`src/handlers/webhookHandler.js`). If you decide to enable real-time updates:
+1. Expose the server publicly (HTTPS).
+2. Configure a Calendly webhook to POST invitee creation events.
+3. Ensure `CALENDLY_WEBHOOK_SECRET` is set for signature verification.
+
+For purely manual sync flows you can ignore these components.
+
+## Troubleshooting Quick Reference
+
+| Symptom | Likely Cause | Action |
+| ------- | ------------ | ------ |
+| Fetching thousands of events | Missing date flags | Add `--from` / `--to` |
+| 0 subscribed but report shows attempts | Response parsing mismatch (now fixed) | Ensure updated code treats `"1"` as success |
+| Process hangs | Cache timers not shut down (fixed) | Use current version; scripts exit cleanly |
+| "No data passed" from Sendy lists | Install expects POST & HTTPS | Verify URL; fallback logic already implemented |
 
 ## Contributing
 
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests if applicable
-5. Submit a pull request
+PRs welcome for: concurrency optimization on status checks, automated tests, webhook revival, performance metrics.
 
 ## License
 
-MIT License - see LICENSE file for details.
+MIT
 
 ## Support
 
-For issues and questions:
-1. Check the troubleshooting section above
-2. Review server logs for error details
-3. Test individual components (Sendy API, webhook endpoint)
-4. Create an issue with detailed logs and configuration (remove sensitive data)
+Open an issue with sanitized logs if you hit edge cases. Include command, flags, and a redacted report snippet.
 
 ---
 
-**Need help?** The integration includes comprehensive logging to help diagnose issues. Check your server logs and the troubleshooting section above.
+Focused test first, then sync. Keep date windows tight for daily or weekly runs.
