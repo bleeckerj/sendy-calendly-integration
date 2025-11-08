@@ -39,7 +39,7 @@ async function setup() {
 
   // Calendly Configuration
   console.log('\n📅 Calendly Configuration:');
-  const calendlyToken = await ask('Calendly Personal Access Token (optional): ');
+  const calendlyToken = await ask('Calendly Personal Access Token (PAT) (optional): ');
   const webhookSecret = await ask('Calendly webhook secret (optional but recommended): ');
 
   // Server Configuration
@@ -52,7 +52,7 @@ async function setup() {
 
 # Calendly Configuration
 CALENDLY_WEBHOOK_SECRET=${webhookSecret}
-CALENDLY_API_TOKEN=${calendlyToken}
+CALENDLY_PERSONAL_ACCESS_TOKEN=${calendlyToken}
 
 # Sendy Configuration
 SENDY_API_KEY=${sendyApiKey}

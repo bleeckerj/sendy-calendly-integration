@@ -60,9 +60,9 @@ SENDY_API_KEY=your_sendy_api_key_here
 SENDY_INSTALLATION_URL=https://your-sendy-installation.com
 SENDY_LIST_ID=your_calendly_list_id_here
 
-# Calendly Configuration (optional but recommended)
+# Calendly Configuration
 CALENDLY_WEBHOOK_SECRET=your_webhook_verification_secret_here
-CALENDLY_API_TOKEN=your_calendly_personal_access_token_here
+CALENDLY_PERSONAL_ACCESS_TOKEN=your_calendly_personal_access_token_here
 
 # Server Configuration
 PORT=3000
@@ -78,10 +78,10 @@ CACHE_TTL=3600
 2. **Installation URL**: Your Sendy installation domain (e.g., `https://newsletters.yoursite.com`)
 3. **List ID**: Create a list called "Calendly" and get its ID from the list settings
 
-### Optional Calendly Information
+### Calendly Information
 
-1. **Webhook Secret**: Set in Calendly webhook configuration for security
-2. **API Token**: Generate from Calendly Developer settings (for future features)
+1. **Webhook Secret**: Set in Calendly webhook configuration for security (verifies incoming webhooks)
+2. **Personal Access Token (PAT)**: Create in Calendly under Integrations/Developer settings → Personal Access Tokens. Use this value in `CALENDLY_PERSONAL_ACCESS_TOKEN` to enable the CLI scripts (listing, analytics, sync). 
 
 ## Deployment Options
 
