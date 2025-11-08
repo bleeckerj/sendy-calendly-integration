@@ -1,0 +1,107 @@
+#!/usr/bin/env node
+require('dotenv').config();
+const { program } = require('commander');
+const path = require('path');
+
+program.name('calendly-sendy').description('Calendly ↔ Sendy utility commands').version('1.0.0');
+
+program.command('list-calendly')
+  .description('List Calendly invitees (deduped by email)')
+  .option('--since <iso>', 'Start date (ISO)')
+  .option('--until <iso>', 'End date (ISO)')
+  .option('--format <format>', 'Output format: json|csv', 'json')
+  .option('--output <path>', 'Output file')
+  .action((opts) => {
+    const args = [];
+    if (opts.since) args.push(`--since=${opts.since}`);
+    if (opts.until) args.push(`--until=${opts.until}`);
+    if (opts.format) args.push(`--format=${opts.format}`);
+    if (opts.output) args.push(`--output=${opts.output}`);
+    require(path.join(__dirname, '..', 'src', 'scripts', 'list_calendly'));
+  });
+
+program.command('list-sendylists')
+  .description('List Sendy lists available via API')
+  .option('--format <format>', 'Output format json|table', 'json')
+  .option('--brand-id <id>', 'Override SENDY_BRAND_ID env')
+  .action((opts) => {
+    const args = [];
+    if (opts.format) args.push(`--format=${opts.format}`);
+    if (opts.brandId) process.env.SENDY_BRAND_ID = opts.brandId;
+    require(path.join(__dirname, '..', 'src', 'scripts', 'list_sendy_lists'));
+  });
+
+program.command('sync')
+  .description('Sync Calendly invitees into a Sendy list')
+  .option('--since <iso>', 'Start date (ISO)')
+  .option('--until <iso>', 'End date (ISO)')
+  .option('--list-id <id>', 'Sendy list id')
+  .option('--dry-run', 'Do not actually subscribe')
+  .option('--batch-size <n>', 'Batch size for sendy requests', '20')
+  .option('--throttle-ms <n>', 'Throttle (ms) between requests', '250')
+  .action((opts) => {
+    const args = [];
+    if (opts.since) args.push(`--since=${opts.since}`);
+    if (opts.until) args.push(`--until=${opts.until}`);
+    if (opts.listId) args.push(`--list-id=${opts.listId}`);
+    if (opts.dryRun) args.push(`--dry-run`);
+    if (opts.batchSize) args.push(`--batch-size=${opts.batchSize}`);
+    if (opts.throttleMs) args.push(`--throttle-ms=${opts.throttleMs}`);
+    require(path.join(__dirname, '..', 'src', 'scripts', 'sync_calendly_to_sendy'));
+  });
+
+program.command('test-calendly')
+  .description('Test Calendly API connectivity')
+  .action(() => {
+    require(path.join(__dirname, '..', 'src', 'scripts', 'test_calendly_connection'));
+  });
+
+program.command('test-sendy')
+  .description('Test Sendy API connectivity')
+  .option('--list-id <id>', 'Override list id to check')
+  .action((opts) => {
+    const args = [];
+    if (opts.listId) args.push(`--list-id=${opts.listId}`);
+    require(path.join(__dirname, '..', 'src', 'scripts', 'test_sendy_connection'));
+  });
+
+program.command('test-webhook')
+  .description('Send a mock Calendly webhook to local server')
+  .option('--port <port>', 'Port number', '3000')
+  .action((opts) => {
+    const args = [];
+    if (opts.port) args.push(`--port=${opts.port}`);
+    require(path.join(__dirname, '..', 'src', 'scripts', 'test_webhook_local'));
+  });
+
+program.command('analytics')
+  .description('Show Calendly analytics (frequency, top invitees)')
+  .option('--since <iso>', 'Start date (ISO)')
+  .option('--until <iso>', 'End date (ISO)')
+  .option('--top <n>', 'Top N invitees', '10')
+  .action((opts) => {
+    const args = [];
+    if (opts.since) args.push(`--since=${opts.since}`);
+    if (opts.until) args.push(`--until=${opts.until}`);
+    if (opts.top) args.push(`--top=${opts.top}`);
+    require(path.join(__dirname, '..', 'src', 'scripts', 'analytics_calendly'));
+  });
+
+program.command('sendy-summary')
+  .description('Show Sendy summary: active subscribers for a list, lists overview, latest campaign (if available)')
+  .option('--list-id <id>', 'Sendy list id')
+  .option('--brand-id <id>', 'Override SENDY_BRAND_ID env')
+  .action((opts) => {
+    const args = [];
+    if (opts.listId) args.push(`--list-id=${opts.listId}`);
+    if (opts.brandId) process.env.SENDY_BRAND_ID = opts.brandId;
+    require(path.join(__dirname, '..', 'src', 'scripts', 'summary_sendy'));
+  });
+
+program.command('list-sendybrands')
+  .description('List Sendy brands (to discover brand IDs)')
+  .action(() => {
+    require(path.join(__dirname, '..', 'src', 'scripts', 'list_sendy_brands'));
+  });
+
+program.parse(process.argv);
