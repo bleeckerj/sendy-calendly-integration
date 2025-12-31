@@ -99,3 +99,7 @@ coverage/
 
 # PM2 logs and pids
 .pm2/
+
+# Shopify sync artifacts
+shopify_sync_report*
+.sendy_shopify_cache*

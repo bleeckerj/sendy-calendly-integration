@@ -13,6 +13,7 @@ This project lets you periodically sync Calendly invitees (people who book meeti
 | Script | Purpose |
 | ------ | ------- |
 | `src/scripts/sync_calendly_to_sendy.js` | Main sync: fetch Calendly invitees in a date window; subscribe new emails to a Sendy list; produce a JSON report. |
+| `src/scripts/sync_shopify_to_sendy.js` | Shopify sync: fetch customers or orders from Shopify; subscribe to Sendy list. |
 | `src/scripts/test_calendly_events.js` | Atomic Calendly test: fetch events (with date range) and sample invitees—no Sendy calls. |
 | `src/scripts/test_sendy_subscribe.js` | Atomic Sendy test: exercise /subscribe endpoint for a single email and show raw response. |
 | Other test helpers (`test_calendly_connection.js`, `test_calendly_events.js`, analytics scripts, list scripts) | Diagnostics & exploration (brands, lists, counts, analytics). |
@@ -35,6 +36,11 @@ SENDY_LIST_ID=your_primary_list_id   # optional default for sync script
 
 # Calendly (Personal Access Token for API calls)
 CALENDLY_PERSONAL_ACCESS_TOKEN=your_calendly_pat
+
+# Shopify (for Shopify sync)
+SHOPIFY_SHOP_NAME=your-shop-name
+SHOPIFY_ACCESS_TOKEN=your_shopify_access_token
+SENDY_SHOPIFY_LIST_ID=your_shopify_list_id # optional default for shopify sync script
 
 # Optional webhook (only if using server/webhooks)
 CALENDLY_WEBHOOK_SECRET=your_webhook_secret
@@ -79,6 +85,31 @@ Example with throttling and dry-run:
 ```bash
 node src/scripts/sync_calendly_to_sendy.js --from 2025-10-01 --to 2025-10-07 --list-id <LIST> --dry-run --batch-size 5 --throttle-ms 500
 ```
+
+## Shopify Sync Script Usage
+
+Sync customers from Shopify (either from Orders or Customers list) to a Sendy list.
+
+```bash
+node src/scripts/sync_shopify_to_sendy.js --from 2025-11-01 --to 2025-11-07 --list-id <SENDY_LIST_ID>
+```
+
+Flags:
+
+| Flag | Meaning | Default |
+| ---- | ------- | ------- |
+| `--from` / `--since` | Start of date window (YYYY-MM-DD or full ISO) | none (fetches ALL if absent) |
+| `--to` / `--until` | End of date window (YYYY-MM-DD or full ISO) | none |
+| `--list-id` | Target Sendy list ID (required if not in env `SENDY_SHOPIFY_LIST_ID`) | `SENDY_SHOPIFY_LIST_ID` env |
+| `--source` | Source of emails: `orders` or `customers` | `orders` |
+| `--order-status` | Filter orders by status (e.g. `any`, `open`, `closed`, `cancelled`) | `any` |
+| `--dry-run` | Do everything except the actual subscribe calls | false |
+| `--batch-size` | Number of emails per subscription batch | 20 |
+| `--throttle-ms` | Delay between individual subscribe requests | 250ms |
+| `--no-cache` | Disable in-memory cache | false |
+| `--no-persistent-cache` | Disable persistent JSON cache | false |
+
+Output: A `shopify_sync_report_<timestamp>.json` file.
 
 ## Calendly Atomic Test
 
@@ -150,6 +181,9 @@ Each run writes a JSON file like:
 | `SENDY_INSTALLATION_URL` | yes | Base URL (e.g. https://newsletter.example.com) |
 | `SENDY_LIST_ID` | optional | Default list for sync script |
 | `CALENDLY_PERSONAL_ACCESS_TOKEN` | yes (for scripts) | Calendly API PAT for events/invitees |
+| `SHOPIFY_SHOP_NAME` | yes (for shopify sync) | Shopify store name (subdomain) |
+| `SHOPIFY_ACCESS_TOKEN` | yes (for shopify sync) | Shopify Admin API access token |
+| `SENDY_SHOPIFY_LIST_ID` | optional | Default list for shopify sync script |
 | `CALENDLY_WEBHOOK_SECRET` | no (unless using webhooks) | Verify webhook signatures |
 | `CACHE_TTL` | no | In-memory cache TTL seconds |
 | `SENDY_SYNC_CACHE_FILE` | no | Override persistent cache path |

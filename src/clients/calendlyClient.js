@@ -24,10 +24,49 @@ class CalendlyClient {
     this.http.interceptors.request.use((config) => {
       try {
         const p = config.params ? JSON.stringify(config.params) : '';
-        logger.info(`Calendly request: ${config.method?.toUpperCase()} ${config.url} ${p}`);
+        logger.debug(`Calendly request: ${config.method?.toUpperCase()} ${config.url} ${p}`);
       } catch (_) {}
       return config;
     });
+
+    // Response interceptor to handle rate limiting
+    this.http.interceptors.response.use(
+      (response) => response,
+      (error) => {
+        // Just pass through, retry logic will handle it
+        return Promise.reject(error);
+      }
+    );
+  }
+
+  async _requestWithRetry(url, config = {}, retries = 3) {
+    for (let i = 0; i < retries; i++) {
+      try {
+        return await this.http.get(url, config);
+      } catch (err) {
+        const status = err.response?.status;
+        const isLastAttempt = i === retries - 1;
+
+        if (isLastAttempt) throw err;
+
+        if (status === 429) {
+          const retryAfter = parseFloat(err.response.headers['retry-after'] || 1) * 1000;
+          logger.warn(`Calendly rate limit hit (429). Retrying after ${retryAfter}ms...`);
+          await new Promise(resolve => setTimeout(resolve, retryAfter + 500)); // Add buffer
+          continue;
+        }
+
+        if (status >= 500 && status < 600) {
+          const delay = 1000 * Math.pow(2, i); // 1s, 2s, 4s
+          logger.warn(`Calendly server error (${status}). Retrying in ${delay}ms...`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+          continue;
+        }
+
+        // For other errors, throw immediately
+        throw err;
+      }
+    }
   }
 
   async getCurrentUser() {
@@ -60,6 +99,16 @@ class CalendlyClient {
       }
       throw err;
     }
+  }
+
+  _getNextPageInfo(data) {
+    const pagination = data && data.pagination ? data.pagination : {};
+    const nextPage = typeof pagination.next_page === 'string' ? pagination.next_page.trim() : null;
+    const nextPageToken = typeof pagination.next_page_token === 'string' ? pagination.next_page_token.trim() : null;
+    return {
+      nextPage: nextPage || null,
+      nextPageToken: nextPageToken || null
+    };
   }
 
   // List scheduled events in a date range; returns array of events
@@ -96,22 +145,60 @@ class CalendlyClient {
     for (const scope of attempts) {
       let events = [];
       let pageToken = undefined;
+      let nextPageUrl = null;
+      const seenTokens = new Set();
+      let pageCount = 0;
+
       try {
-        let first = true;
         do {
-          const baseParams = buildParams(scope);
-          const params = pageToken ? { ...baseParams, page_token: pageToken } : baseParams;
-          const data = await this._get('/scheduled_events', params);
-          if (data && data.collection) events = events.concat(data.collection);
-          pageToken = data && data.pagination ? data.pagination.next_page_token : undefined;
-          // Defensive: Calendly sometimes returns pagination.next_page_token even when invalid next call triggers error.
-          if (!pageToken) break;
-          if (pageToken && pageToken === 'null') {
+          let data;
+          if (nextPageUrl) {
+            const res = await this._requestWithRetry(nextPageUrl);
+            data = res.data;
+          } else {
+            const baseParams = buildParams(scope);
+            const params = pageToken ? { ...baseParams, page_token: String(pageToken).trim() } : baseParams;
+            data = await this._requestWithRetry('/scheduled_events', { params });
+          }
+
+          if (data && data.collection) {
+            const batch = data.collection;
+            events = events.concat(batch);
+            pageCount++;
+
+            // Log progress
+            const batchSize = batch.length;
+            const totalSoFar = events.length;
+            let dateRange = '';
+            if (batchSize > 0) {
+              const dates = batch.map(e => e.start_time).sort();
+              const oldest = dates[0];
+              const newest = dates[dates.length - 1];
+              dateRange = `[${oldest} - ${newest}]`;
+            }
+            logger.info(`📅 Page ${pageCount}: Fetched ${batchSize} events. Total: ${totalSoFar}. Range: ${dateRange}`);
+          }
+
+          const { nextPage, nextPageToken } = this._getNextPageInfo(data);
+          nextPageUrl = nextPage;
+          pageToken = nextPage ? undefined : nextPageToken;
+
+          if (!nextPageUrl && !pageToken) break;
+          if (pageToken === 'null') {
             pageToken = undefined;
             break;
           }
-          first = false;
-        } while (pageToken);
+
+          if (pageToken) {
+            const normalizedToken = String(pageToken).trim();
+            if (seenTokens.has(normalizedToken)) {
+              logger.warn('Calendly pagination returned a repeated page token; stopping pagination to avoid infinite loop.');
+              break;
+            }
+            seenTokens.add(normalizedToken);
+            pageToken = normalizedToken;
+          }
+        } while (nextPageUrl || pageToken);
         // Post-filter by date window defensively in case API ignores params or returns broader scope
         if (since || until) {
           const min = since ? new Date(since).getTime() : null;
@@ -163,9 +250,10 @@ class CalendlyClient {
     try {
       let pageToken = undefined;
       do {
-        const data = await this._get(url, { count, page_token: pageToken });
-        if (data && data.collection) invitees = invitees.concat(data.collection);
-        pageToken = data && data.pagination ? data.pagination.next_page_token : undefined;
+        const data = await this._requestWithRetry(url, { params: { count, page_token: pageToken } });
+        const res = data.data;
+        if (res && res.collection) invitees = invitees.concat(res.collection);
+        pageToken = res && res.pagination ? res.pagination.next_page_token : undefined;
       } while (pageToken);
       return invitees;
     } catch (err) {
@@ -177,9 +265,11 @@ class CalendlyClient {
   // Convenience: fetch invitees across events in range; returns normalized invitee objects
   async listInviteesAcrossEvents({ since = null, until = null } = {}) {
     const events = await this.listScheduledEvents({ since, until, count: 100 });
-    logger.info(`Found ${events.length} scheduled events`);
+    logger.info(`✅ Found ${events.length} scheduled events`);
 
     let allInvitees = [];
+    let processedEvents = 0;
+    
     for (const ev of events) {
       const uuid = ev.uri ? ev.uri.split('/').pop() : ev.uuid || ev.id;
       try {
@@ -195,6 +285,10 @@ class CalendlyClient {
             raw: i
           });
         });
+        processedEvents++;
+        if (processedEvents % 10 === 0) {
+          logger.info(`⏳ Processed invitees for ${processedEvents}/${events.length} events...`);
+        }
       } catch (err) {
         logger.warn(`Skipping invitees for event ${uuid} due to error: ${err.message}`);
       }

@@ -104,4 +104,57 @@ program.command('list-sendybrands')
     require(path.join(__dirname, '..', 'src', 'scripts', 'list_sendy_brands'));
   });
 
+// Shopify commands
+program.command('shopify-sync')
+  .description('Sync Shopify order emails to Sendy list')
+  .option('--since <iso>', 'Start date (ISO)')
+  .option('--until <iso>', 'End date (ISO)')
+  .option('--from <date>', 'Start date (YYYY-MM-DD)')
+  .option('--to <date>', 'End date (YYYY-MM-DD)')
+  .option('--list-id <id>', 'Sendy list id')
+  .option('--order-status <status>', 'Order status filter (any|open|closed|cancelled)', 'any')
+  .option('--dry-run', 'Do not actually subscribe')
+  .option('--batch-size <n>', 'Batch size for sendy requests', '20')
+  .option('--throttle-ms <n>', 'Throttle (ms) between requests', '250')
+  .action((opts) => {
+    const args = [];
+    if (opts.since) args.push(`--since=${opts.since}`);
+    if (opts.until) args.push(`--until=${opts.until}`);
+    if (opts.from) args.push(`--from=${opts.from}`);
+    if (opts.to) args.push(`--to=${opts.to}`);
+    if (opts.listId) args.push(`--list-id=${opts.listId}`);
+    if (opts.orderStatus) args.push(`--order-status=${opts.orderStatus}`);
+    if (opts.dryRun) args.push(`--dry-run`);
+    if (opts.batchSize) args.push(`--batch-size=${opts.batchSize}`);
+    if (opts.throttleMs) args.push(`--throttle-ms=${opts.throttleMs}`);
+    require(path.join(__dirname, '..', 'src', 'scripts', 'sync_shopify_to_sendy'));
+  });
+
+program.command('list-shopify-orders')
+  .description('List Shopify orders/customers (export to CSV/JSON)')
+  .option('--since <iso>', 'Start date (ISO)')
+  .option('--until <iso>', 'End date (ISO)')
+  .option('--from <date>', 'Start date (YYYY-MM-DD)')
+  .option('--to <date>', 'End date (YYYY-MM-DD)')
+  .option('--format <format>', 'Output format: json|csv', 'json')
+  .option('--output <path>', 'Output file')
+  .option('--order-status <status>', 'Order status filter', 'any')
+  .action((opts) => {
+    const args = [];
+    if (opts.since) args.push(`--since=${opts.since}`);
+    if (opts.until) args.push(`--until=${opts.until}`);
+    if (opts.from) args.push(`--from=${opts.from}`);
+    if (opts.to) args.push(`--to=${opts.to}`);
+    if (opts.format) args.push(`--format=${opts.format}`);
+    if (opts.output) args.push(`--output=${opts.output}`);
+    if (opts.orderStatus) args.push(`--order-status=${opts.orderStatus}`);
+    require(path.join(__dirname, '..', 'src', 'scripts', 'list_shopify_orders'));
+  });
+
+program.command('test-shopify')
+  .description('Test Shopify API connectivity')
+  .action(() => {
+    require(path.join(__dirname, '..', 'src', 'scripts', 'test_shopify_connection'));
+  });
+
 program.parse(process.argv);
