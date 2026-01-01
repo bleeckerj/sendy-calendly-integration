@@ -10,7 +10,7 @@ const logger = require('../utils/logger');
 
 async function run() {
   const args = process.argv.slice(2);
-  const opts = { dryRun: false, batchSize: 20, throttleMs: 250, noCache: false, clearCache: false, noPersistentCache: false, cacheFile: null, refreshPersistent: false };
+  const opts = { dryRun: false, batchSize: 20, throttleMs: 250, noCache: false, clearCache: false, noPersistentCache: false, cacheFile: null, refreshPersistent: false, scope: 'user' };
   const normalizeDate = (val, kind) => {
     if (!val) return val;
     // If value already looks like ISO with time, use as-is
@@ -32,6 +32,7 @@ async function run() {
     if (a.startsWith('--batch-size=')) opts.batchSize = parseInt(a.split('=')[1]);
     if (a.startsWith('--throttle-ms=')) opts.throttleMs = parseInt(a.split('=')[1]);
     if (a.startsWith('--cache-file=')) opts.cacheFile = a.split('=')[1];
+    if (a.startsWith('--scope=')) opts.scope = a.split('=')[1];
 
     // Space-separated forms: --from 2025-11-01 --to 2025-11-07 etc.
     if (a === '--since' && args[i+1]) { opts.since = args[i+1]; i++; continue; }
@@ -42,6 +43,7 @@ async function run() {
     if (a === '--batch-size' && args[i+1]) { opts.batchSize = parseInt(args[i+1]); i++; continue; }
     if (a === '--throttle-ms' && args[i+1]) { opts.throttleMs = parseInt(args[i+1]); i++; continue; }
     if (a === '--cache-file' && args[i+1]) { opts.cacheFile = args[i+1]; i++; continue; }
+    if (a === '--scope' && args[i+1]) { opts.scope = args[i+1]; i++; continue; }
 
     // Flags
     if (a === '--dry-run') opts.dryRun = true;
@@ -77,11 +79,12 @@ async function run() {
 
   logger.info('📅 Fetching invitees from Calendly...');
   if (!opts.since && !opts.until) {
-    logger.warn('⚠️ No date window provided (--since/--until or --from/--to). Fetching ALL events may take a while.');
+    logger.warn('⚠️ No date window provided. Defaulting to start from 2015-01-01 to fetch full history.');
+    opts.since = '2015-01-01T00:00:00Z';
   } else {
     logger.info(`🗓️ Date window: since=${opts.since || 'unset'} until=${opts.until || 'unset'}`);
   }
-  const invitees = await calendly.listInviteesAcrossEvents({ since: opts.since, until: opts.until });
+  const invitees = await calendly.listInviteesAcrossEvents({ since: opts.since, until: opts.until, scope: opts.scope });
 
   // Normalize and dedupe by email - keep latest created_at
   const map = new Map();

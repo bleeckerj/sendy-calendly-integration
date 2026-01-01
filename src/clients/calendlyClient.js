@@ -112,7 +112,7 @@ class CalendlyClient {
   }
 
   // List scheduled events in a date range; returns array of events
-  async listScheduledEvents({ user = null, organization = null, since = null, until = null, count = 100 } = {}) {
+  async listScheduledEvents({ user = null, organization = null, since = null, until = null, count = 100, scope = 'user' } = {}) {
     // Calendly requires one of organization, user, or group.
     const sanitize = (obj) => {
       const o = {};
@@ -122,10 +122,10 @@ class CalendlyClient {
       }
       return o;
     };
-    const buildParams = (scope) => {
+    const buildParams = (scopeObj) => {
       const params = { count };
-      if (scope.user) params.user = scope.user;
-      if (scope.organization) params.organization = scope.organization;
+      if (scopeObj.user) params.user = scopeObj.user;
+      if (scopeObj.organization) params.organization = scopeObj.organization;
       if (since) params.min_start_time = since; // ISO8601
       if (until) params.max_start_time = until; // ISO8601
       return sanitize(params);
@@ -136,13 +136,29 @@ class CalendlyClient {
       attempts.push({ user, organization });
     } else {
       const me = await this.getCurrentUser();
-      // Prefer user scope first to avoid pulling entire organization events
-      if (me.uri) attempts.push({ user: me.uri });
-      if (me.current_organization) attempts.push({ organization: me.current_organization });
+      
+      if (scope === 'organization') {
+        if (me.current_organization) {
+          logger.info(`🏢 Using organization scope: ${me.current_organization}`);
+          attempts.push({ organization: me.current_organization });
+        } else {
+          logger.warn('⚠️ Organization scope requested but no organization found for user.');
+        }
+      } else {
+        // Default to user scope
+        if (me.uri) {
+          logger.info(`👤 Using user scope: ${me.uri}`);
+          attempts.push({ user: me.uri });
+        }
+        // Fallback to org if user scope fails (though usually user scope succeeds with 0 events)
+        if (me.current_organization) {
+          attempts.push({ organization: me.current_organization });
+        }
+      }
     }
 
     let lastErr;
-    for (const scope of attempts) {
+    for (const currentScope of attempts) {
       let events = [];
       let pageToken = undefined;
       let nextPageUrl = null;
@@ -156,7 +172,7 @@ class CalendlyClient {
             const res = await this._requestWithRetry(nextPageUrl);
             data = res.data;
           } else {
-            const baseParams = buildParams(scope);
+            const baseParams = buildParams(currentScope);
             const params = pageToken ? { ...baseParams, page_token: String(pageToken).trim() } : baseParams;
             data = await this._requestWithRetry('/scheduled_events', { params });
           }
@@ -214,6 +230,17 @@ class CalendlyClient {
             logger.info(`Calendly post-filter trimmed events from ${beforeCount} to ${events.length} within date window.`);
           }
         }
+        
+        if (events.length > 0) {
+          return events;
+        }
+
+        // If we found 0 events, and there are more scopes to try, continue
+        if (attempts.length > 1 && currentScope !== attempts[attempts.length - 1]) {
+           logger.warn(`⚠️ Found 0 events with scope ${JSON.stringify(currentScope)}. Trying next available scope...`);
+           continue;
+        }
+
         return events;
       } catch (err) {
         lastErr = err;
@@ -223,15 +250,15 @@ class CalendlyClient {
           const details = err.response && err.response.data && err.response.data.details;
           const pageTokenIssue = Array.isArray(details) && details.some(d => d.parameter === 'page_token');
           if (pageTokenIssue) {
-            logger.warn('400 due to page_token; retrying initial request without pagination for scope', JSON.stringify(scope));
+            logger.warn('400 due to page_token; retrying initial request without pagination for scope', JSON.stringify(currentScope));
             try {
-              const data = await this._get('/scheduled_events', buildParams(scope));
+              const data = await this._get('/scheduled_events', buildParams(currentScope));
               if (data && data.collection) return data.collection;
             } catch (e2) {
               logger.warn('Retry without page_token also failed:', e2.message);
             }
           }
-          logger.warn('Scheduled events 400 with scope', JSON.stringify(scope), '- trying next scope if available.');
+          logger.warn('Scheduled events 400 with scope', JSON.stringify(currentScope), '- trying next scope if available.');
           continue; // try next scope
         }
         break; // non-400, don't retry with alternate scope
@@ -263,8 +290,8 @@ class CalendlyClient {
   }
 
   // Convenience: fetch invitees across events in range; returns normalized invitee objects
-  async listInviteesAcrossEvents({ since = null, until = null } = {}) {
-    const events = await this.listScheduledEvents({ since, until, count: 100 });
+  async listInviteesAcrossEvents({ since = null, until = null, scope = 'user' } = {}) {
+    const events = await this.listScheduledEvents({ since, until, count: 100, scope });
     logger.info(`✅ Found ${events.length} scheduled events`);
 
     let allInvitees = [];
