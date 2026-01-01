@@ -112,7 +112,7 @@ class CalendlyClient {
   }
 
   // List scheduled events in a date range; returns array of events
-  async listScheduledEvents({ user = null, organization = null, since = null, until = null, count = 100, scope = 'user' } = {}) {
+  async listScheduledEvents({ user = null, organization = null, since = null, until = null, count = 100, scope = 'user', status = 'active' } = {}) {
     // Calendly requires one of organization, user, or group.
     const sanitize = (obj) => {
       const o = {};
@@ -123,7 +123,7 @@ class CalendlyClient {
       return o;
     };
     const buildParams = (scopeObj) => {
-      const params = { count };
+      const params = { count, status };
       if (scopeObj.user) params.user = scopeObj.user;
       if (scopeObj.organization) params.organization = scopeObj.organization;
       if (since) params.min_start_time = since; // ISO8601
@@ -136,6 +136,7 @@ class CalendlyClient {
       attempts.push({ user, organization });
     } else {
       const me = await this.getCurrentUser();
+      logger.info(`🔑 Authenticated as: ${me.name} (${me.email})`);
       
       if (scope === 'organization') {
         if (me.current_organization) {
@@ -174,11 +175,16 @@ class CalendlyClient {
           } else {
             const baseParams = buildParams(currentScope);
             const params = pageToken ? { ...baseParams, page_token: String(pageToken).trim() } : baseParams;
-            data = await this._requestWithRetry('/scheduled_events', { params });
+            const res = await this._requestWithRetry('/scheduled_events', { params });
+            data = res.data;
           }
 
           if (data && data.collection) {
             const batch = data.collection;
+            logger.debug(`🐛 Raw batch size: ${batch.length}`);
+            if (batch.length > 0) {
+               logger.debug(`🐛 First event in batch: ${JSON.stringify(batch[0])}`);
+            }
             events = events.concat(batch);
             pageCount++;
 
@@ -193,6 +199,8 @@ class CalendlyClient {
               dateRange = `[${oldest} - ${newest}]`;
             }
             logger.info(`📅 Page ${pageCount}: Fetched ${batchSize} events. Total: ${totalSoFar}. Range: ${dateRange}`);
+          } else {
+            logger.debug(`🐛 No collection in response data. Keys: ${Object.keys(data || {})}`);
           }
 
           const { nextPage, nextPageToken } = this._getNextPageInfo(data);
@@ -290,8 +298,8 @@ class CalendlyClient {
   }
 
   // Convenience: fetch invitees across events in range; returns normalized invitee objects
-  async listInviteesAcrossEvents({ since = null, until = null, scope = 'user' } = {}) {
-    const events = await this.listScheduledEvents({ since, until, count: 100, scope });
+  async listInviteesAcrossEvents({ since = null, until = null, scope = 'user', status = 'active' } = {}) {
+    const events = await this.listScheduledEvents({ since, until, count: 100, scope, status });
     logger.info(`✅ Found ${events.length} scheduled events`);
 
     let allInvitees = [];

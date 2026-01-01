@@ -10,7 +10,7 @@ const logger = require('../utils/logger');
 
 async function run() {
   const args = process.argv.slice(2);
-  const opts = { dryRun: false, batchSize: 20, throttleMs: 250, noCache: false, clearCache: false, noPersistentCache: false, cacheFile: null, refreshPersistent: false, scope: 'user' };
+  const opts = { dryRun: false, batchSize: 20, throttleMs: 250, noCache: false, clearCache: false, noPersistentCache: false, cacheFile: null, refreshPersistent: false, scope: 'user', status: 'active' };
   const normalizeDate = (val, kind) => {
     if (!val) return val;
     // If value already looks like ISO with time, use as-is
@@ -33,6 +33,7 @@ async function run() {
     if (a.startsWith('--throttle-ms=')) opts.throttleMs = parseInt(a.split('=')[1]);
     if (a.startsWith('--cache-file=')) opts.cacheFile = a.split('=')[1];
     if (a.startsWith('--scope=')) opts.scope = a.split('=')[1];
+    if (a.startsWith('--status=')) opts.status = a.split('=')[1];
 
     // Space-separated forms: --from 2025-11-01 --to 2025-11-07 etc.
     if (a === '--since' && args[i+1]) { opts.since = args[i+1]; i++; continue; }
@@ -44,6 +45,7 @@ async function run() {
     if (a === '--throttle-ms' && args[i+1]) { opts.throttleMs = parseInt(args[i+1]); i++; continue; }
     if (a === '--cache-file' && args[i+1]) { opts.cacheFile = args[i+1]; i++; continue; }
     if (a === '--scope' && args[i+1]) { opts.scope = args[i+1]; i++; continue; }
+    if (a === '--status' && args[i+1]) { opts.status = args[i+1]; i++; continue; }
 
     // Flags
     if (a === '--dry-run') opts.dryRun = true;
@@ -84,7 +86,7 @@ async function run() {
   } else {
     logger.info(`🗓️ Date window: since=${opts.since || 'unset'} until=${opts.until || 'unset'}`);
   }
-  const invitees = await calendly.listInviteesAcrossEvents({ since: opts.since, until: opts.until, scope: opts.scope });
+  const invitees = await calendly.listInviteesAcrossEvents({ since: opts.since, until: opts.until, scope: opts.scope, status: opts.status });
 
   // Normalize and dedupe by email - keep latest created_at
   const map = new Map();

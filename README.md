@@ -63,9 +63,11 @@ Flags (both `--flag value` and `--flag=value` forms work):
 
 | Flag | Meaning | Default |
 | ---- | ------- | ------- |
-| `--from` / `--since` | Start of date window (YYYY-MM-DD or full ISO) | none (fetches ALL if absent) |
+| `--from` / `--since` | Start of date window (YYYY-MM-DD or full ISO) | 2015-01-01 (fetches full history) |
 | `--to` / `--until` | End of date window (YYYY-MM-DD or full ISO) | none |
 | `--list-id` | Target Sendy list ID (required if not in env) | `SENDY_LIST_ID` env |
+| `--scope` | Calendly scope (`user` or `organization`) | `user` (falls back to `organization` if 0 events found) |
+| `--status` | Filter by event status (`active` or `canceled`) | `active` |
 | `--dry-run` | Do everything except the actual subscribe calls | false |
 | `--batch-size` | Number of emails per subscription batch | 20 |
 | `--throttle-ms` | Delay between individual subscribe requests | 250ms |
